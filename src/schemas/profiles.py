@@ -1,7 +1,8 @@
 from datetime import date
 
-from fastapi import UploadFile, Form, File, HTTPException
+from fastapi import UploadFile, Form, File, HTTPException, status
 from pydantic import BaseModel, field_validator, HttpUrl, ConfigDict
+from pydantic import ValidationError
 
 from validation import (
     validate_name,
@@ -42,14 +43,20 @@ class ProfileRequestSchema(BaseModel):
             info: str = Form(...),
             avatar: UploadFile = File(...),
     ) -> "ProfileRequestSchema":
-        return cls(
-            first_name=first_name,
-            last_name=last_name,
-            gender=gender,
-            date_of_birth=date_of_birth,
-            info=info,
-            avatar=avatar,
-        )
+        try:
+            return cls(
+                first_name=first_name,
+                last_name=last_name,
+                gender=gender,
+                date_of_birth=date_of_birth,
+                info=info,
+                avatar=avatar,
+            )
+        except ValidationError as error:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(error),
+            )
 
 
 class ProfileResponseSchema(BaseModel):

@@ -256,7 +256,9 @@ async def activate_account(
 )
 async def request_password_reset_token(
         data: PasswordResetRequestSchema,
+        background_tasks: BackgroundTasks,
         db: AsyncSession = Depends(get_db),
+        email_sender: EmailSenderInterface = Depends(get_accounts_email_notificator),
 ) -> MessageResponseSchema:
     """
     Endpoint to request a password reset token.
@@ -285,6 +287,17 @@ async def request_password_reset_token(
     reset_token = PasswordResetTokenModel(user_id=cast(int, user.id))
     db.add(reset_token)
     await db.commit()
+
+    reset_link = (
+        f"http://127.0.0.1/api/v1/accounts/password-reset/"
+        f"?email={user.email}&token={reset_token.token}"
+    )
+
+    background_tasks.add_task(
+        email_sender.send_password_reset_email,
+        str(user.email),
+        reset_link,
+    )
 
     return MessageResponseSchema(
         message="If you are registered, you will receive an email with instructions."
@@ -336,7 +349,9 @@ async def request_password_reset_token(
 )
 async def reset_password(
         data: PasswordResetCompleteRequestSchema,
+        background_tasks: BackgroundTasks,
         db: AsyncSession = Depends(get_db),
+        email_sender: EmailSenderInterface = Depends(get_accounts_email_notificator),
 ) -> MessageResponseSchema:
     """
     Endpoint for resetting a user's password.
@@ -392,6 +407,14 @@ async def reset_password(
         user.password = data.password
         await db.run_sync(lambda s: s.delete(token_record))
         await db.commit()
+
+        login_link = "http://127.0.0.1/api/v1/accounts/login/"
+
+        background_tasks.add_task(
+            email_sender.send_password_reset_complete_email,
+            str(user.email),
+            login_link,
+        )
     except SQLAlchemyError:
         await db.rollback()
         raise HTTPException(

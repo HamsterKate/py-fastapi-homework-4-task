@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.orm import joinedload
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -116,7 +117,11 @@ async def create_profile(
             detail=str(error),
         )
 
-    stmt = select(UserModel).filter_by(id=current_user_id)
+    stmt = (
+        select(UserModel)
+        .options(joinedload(UserModel.group))
+        .filter_by(id=current_user_id)
+    )
     result = await db.execute(stmt)
     current_user = result.scalars().first()
 
