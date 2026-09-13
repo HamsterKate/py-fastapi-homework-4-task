@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import cast
 
-from fastapi import APIRouter, Depends, status, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, status, HTTPException
 from sqlalchemy import select, delete
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -67,7 +67,9 @@ router = APIRouter()
 )
 async def register_user(
         user_data: UserRegistrationRequestSchema,
+        background_tasks: BackgroundTasks,
         db: AsyncSession = Depends(get_db),
+        email_sender: EmailSenderInterface = Depends(get_accounts_email_notificator),
 ) -> UserRegistrationResponseSchema:
     """
     Endpoint for user registration.
@@ -120,6 +122,17 @@ async def register_user(
 
         await db.commit()
         await db.refresh(new_user)
+
+        activation_link = (
+            f"http://127.0.0.1/api/v1/accounts/activate/"
+            f"?email={new_user.email}&token={activation_token.token}"
+        )
+
+        background_tasks.add_task(
+            email_sender.send_activation_email,
+            str(new_user.email),
+            activation_link,
+        )
     except SQLAlchemyError as e:
         await db.rollback()
         raise HTTPException(
@@ -163,7 +176,9 @@ async def register_user(
 )
 async def activate_account(
         activation_data: UserActivationRequestSchema,
+        background_tasks: BackgroundTasks,
         db: AsyncSession = Depends(get_db),
+        email_sender: EmailSenderInterface = Depends(get_accounts_email_notificator),
 ) -> MessageResponseSchema:
     """
     Endpoint to activate a user's account.
@@ -217,6 +232,14 @@ async def activate_account(
     user.is_active = True
     await db.delete(token_record)
     await db.commit()
+
+    login_link = "http://127.0.0.1/api/v1/accounts/login/"
+
+    background_tasks.add_task(
+        email_sender.send_activation_complete_email,
+        str(user.email),
+        login_link,
+    )
 
     return MessageResponseSchema(message="User account activated successfully.")
 
